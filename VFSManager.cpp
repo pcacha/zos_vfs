@@ -168,9 +168,10 @@ void VFSManager::format(string size) {
     fwrite(dataBitmap, sizeof(char), sb.clusterCount, fp);
     fwrite(inodes, sizeof(inode), sb.inodesCount, fp);
     int bytesLeft = bytesSize - sizeof(superBlock) - sizeof(char) * sb.inodesCount - sizeof(char) * sb.clusterCount - sizeof(inode) * sb.inodesCount;
-    char dataPlaceholder[bytesLeft];
+    char *dataPlaceholder = (char *) malloc(bytesLeft * sizeof(char));
     memset(dataPlaceholder, 0, bytesLeft);
     fwrite(dataPlaceholder, sizeof(char), bytesLeft, fp);
+    free(dataPlaceholder);
     fflush(fp);
 
     // set initial state - root dir

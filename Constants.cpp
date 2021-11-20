@@ -24,5 +24,5 @@ const string Constants::NOT_FORMATTED_MSG = "The file system is not formatted";
 const string Constants::COMMAND_SUCCESS = "OK";
 const string Constants::CANNOT_CREATE_FILE = "CANNOT CREATE FILE";
 const string Constants::FULL_CLUSTERS_MSG = "No more free data clusters!";
-char * Constants::SELF_REF = ".\0\0\0\0\0\0\0\0\0\0";
-char * Constants::PARENT_REF = "..\0\0\0\0\0\0\0\0\0";
+char * Constants::SELF_REF = ".";
+char * Constants::PARENT_REF = "..";

@@ -61,13 +61,13 @@ public:
     // traversal reference to parent
     static char *PARENT_REF;
     // ratio of inodes bitmap
-    constexpr static const double INODES_BITMAP_SIZE_RATIO = 0.015;
+    constexpr static const double INODES_BITMAP_SIZE_RATIO = 0.001;
     // count of direct references
     static const int DIRECTS_COUNT = 5;
     // max name of item
     static const int ITEM_MAX_NAME_LEN = 12;
     // size of cluster [B]
-    static const int CLUSTER_SIZE = 4096;
+    static const int CLUSTER_SIZE = 8192;
     // no more free data clusters message
     static const string FULL_CLUSTERS_MSG;
 };
