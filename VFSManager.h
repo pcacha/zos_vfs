@@ -1,0 +1,87 @@
+#ifndef ZOS_VFS_VFSMANAGER_H
+#define ZOS_VFS_VFSMANAGER_H
+
+#include <string>
+#include "Constants.h"
+#include "VFSDefinitions.h"
+
+using namespace std;
+
+/*
+ * Class containing the logic of virtual file system
+ */
+class VFSManager {
+private:
+    // vfs name
+    char *vfsName;
+    // super block
+    superBlock sb;
+    // inodes bitmap
+    char *inodesBitmap;
+    // data cluster bitmap
+    char *dataBitmap;
+    // inodes
+    inode *inodes;
+    // current path
+    char path[1000];
+    // current inode idx
+    int currentInode;
+    // if vfs is already formatted
+    bool formatted;
+    // file
+    FILE *fp;
+
+    // format vfs
+    void format(string size);
+    // copy
+    void cp(string source, string target);
+    // move
+    void mv(string source, string target);
+    // remove
+    void rm(string target);
+    // make directory
+    void mkdir(string target);
+    // remove directory
+    void rmdir(string target);
+    // list items
+    void ls(string target);
+    // print text
+    void cat(string target);
+    // change directory
+    void cd(string path);
+    // print info about item
+    void info(string target);
+    // copy file to vfs
+    void incp(string source, string target);
+    // copy file from vfs
+    void outcp(string source, string target);
+    // execute file with commands
+    void load(string target);
+    // hard link
+    void ln(string source, string target);
+    // save bitmaps and array of inodes
+    void saveMetadata();
+    // get the size of bytes from user input
+    int getBytesSize(string sizeString);
+    // add reference to self and parent
+    void addTraversalReference(int inodeIdx, int parentIdx);
+    // add item to directory
+    void addDirectoryItem(int dirInodeIdx, int targetInodeIdx, char *itemName);
+    // save dir item to vfs
+    void saveDirItem(int addressInClusters, directoryItem *item);
+    // get index of first free data cluster
+    int getFreeClusterIdx();
+
+public:
+    // constructor
+    explicit VFSManager(char *vfsName);
+    // destructor
+    ~VFSManager();
+    // handles user command
+    void handleCommand(string commandLine);
+    // prints current directory
+    void pwd();
+};
+
+
+#endif
