@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iostream>
 #include <vector>
+#include <fstream>
 
 using namespace std;
 
@@ -398,7 +399,24 @@ void VFSManager::outcp(string source, string target) {
 }
 
 void VFSManager::load(string target) {
+    string command;
+    ifstream commandFile(target.c_str(), ios::in);
 
+    // check if it was successfully opened
+    if(!commandFile) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
+
+    // process all lines
+    while (getline(commandFile, command))
+    {
+        pwd();
+        cout << Constants::PATH_END << Constants::COMMAND_DELIM << command << endl;
+        handleCommand(command);
+    }
+
+    cout << Constants::COMMAND_SUCCESS << endl;
 }
 
 void VFSManager::ln(string source, string target) {

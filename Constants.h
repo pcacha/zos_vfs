@@ -82,6 +82,8 @@ public:
     static const string NOT_EMPTY;
     // exist msg
     static const string EXIST;
+    // file not found msg
+    static const string FILE_NOT_FOUND;
 };
 
 

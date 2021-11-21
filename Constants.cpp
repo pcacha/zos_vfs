@@ -28,5 +28,6 @@ const string Constants::FULL_INODES_MSG = "No more free inodes!";
 const string Constants::PATH_NOT_FOUND = "PATH NOT FOUND";
 const string Constants::EXIST = "EXIST";
 const string Constants::NOT_EMPTY = "NOT EMPTY";
+const string Constants::FILE_NOT_FOUND = "FILE NOT FOUND";
 char * Constants::SELF_REF = ".";
 char * Constants::PARENT_REF = "..";
