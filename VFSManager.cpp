@@ -6,11 +6,12 @@
 #include <stdlib.h>
 #include <cstring>
 #include <iostream>
+#include <vector>
 
 using namespace std;
 
 VFSManager::VFSManager(char *vfsName): sb() {
-    strcpy(this->vfsName, vfsName);
+    this->vfsName = vfsName;
     path[0] = Constants::PATH_DELIM;
     path[1] = '\0';
     inodesBitmap = nullptr;
@@ -73,7 +74,12 @@ void VFSManager::handleCommand(string commandLine) {
         rmdir(parts[1]);
     }
     else if(command == Constants::LS) {
-        ls(parts[1]);
+        if(parts.size() == 2) {
+            ls(parts[1]);
+        }
+        else {
+            ls("");
+        }
     }
     else if(command == Constants::CAT) {
         cat(parts[1]);
@@ -200,7 +206,38 @@ void VFSManager::rm(string target) {
 }
 
 void VFSManager::mkdir(string target) {
+    int parentInodeIdx;
+    char *targetName;
+    // parse path
+    parsePath(target, &parentInodeIdx, targetName);
 
+    // inode not exist - path not found
+    if(parentInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
+        cout << Constants::PATH_NOT_FOUND << endl;
+        return;
+    }
+
+    // check if name is unique
+    if(!itemNameUnique(parentInodeIdx, targetName)) {
+        cout << Constants::EXIST << endl;
+        return;
+    }
+
+    // create inode, mark it in inode map and init it
+    int newInodeIdx = getFreeInodeIdx();
+    inodesBitmap[newInodeIdx] = FULL;
+    inodes[newInodeIdx].isDirectory = true;
+    inodes[newInodeIdx].references = 0;
+    inodes[newInodeIdx].size = 0;
+
+    // add it to parent
+    addDirectoryItem(parentInodeIdx, newInodeIdx, targetName);
+    free(targetName);
+
+    // add parent .. and current dir .
+    addTraversalReference(newInodeIdx, parentInodeIdx);
+    saveMetadata();
+    cout << Constants::COMMAND_SUCCESS << endl;
 }
 
 void VFSManager::rmdir(string target) {
@@ -208,7 +245,65 @@ void VFSManager::rmdir(string target) {
 }
 
 void VFSManager::ls(string target) {
+    int lsDirInodeIdx;
+    if(target.empty()) {
+        // no path defined
+        lsDirInodeIdx = currentInode;
+    }
+    else {
+        // path defined
+        int parentInodeIdx;
+        char *targetName;
+        // parse path
+        parsePath(target, &parentInodeIdx, targetName);
 
+        // inode not exist - path not found
+        if(parentInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
+            cout << Constants::PATH_NOT_FOUND << endl;
+            return;
+        }
+
+        // get items of parent dir
+        int itemsCount = inodes[parentInodeIdx].size / sizeof(directoryItem);
+        directoryItem *items = (directoryItem *) malloc(itemsCount * sizeof(directoryItem));
+        getAllDirectoryItems(items, parentInodeIdx, itemsCount);
+
+        // iterate items and check for the same names
+        bool found = false;
+        for(int j = 0; j < itemsCount; j++) {
+            // check if directory name is the same
+            if(strcmp(items[j].name, targetName) == 0 && inodes[items[j].inode].isDirectory) {
+                found = true;
+                lsDirInodeIdx = items[j].inode;
+                break;
+            }
+        }
+        free(items);
+        free(targetName);
+
+        if(!found) {
+            cout << Constants::PATH_NOT_FOUND << endl;
+            return;
+        }
+    }
+
+    // get items of wanted dir
+    int itemsCount = inodes[lsDirInodeIdx].size / sizeof(directoryItem);
+    directoryItem *items = (directoryItem *) malloc(itemsCount * sizeof(directoryItem));
+    getAllDirectoryItems(items, lsDirInodeIdx, itemsCount);
+
+    // iterate items and print them
+    for(int i = 0; i < itemsCount; i++) {
+        if(inodes[items[i].inode].isDirectory) {
+            // for directories
+            cout << "+" << items[i].name << endl;
+        }
+        else {
+            // for files
+            cout << "-" << items[i].name << endl;
+        }
+    }
+    free(items);
 }
 
 void VFSManager::cat(string target) {
@@ -323,4 +418,124 @@ int VFSManager::getFreeClusterIdx() {
     // if no free cluster found exit app
     cout << Constants::FULL_CLUSTERS_MSG << endl;
     exit(EXIT_FAILURE);
+}
+
+int VFSManager::checkPathExists(vector<string> path, int startInodeIdx) {
+    int currentInodeIdx = startInodeIdx;
+    // iterate through path
+    for(int i = 0; i < path.size() - 1; i++) {
+        // convert current dir name to char pointer
+        char *itemName = (char *) malloc((path[i].length() + 1) * sizeof(char));
+        strcpy(itemName, path[i].c_str());
+
+        // get all items of dir
+        int itemsCount = inodes[currentInodeIdx].size / sizeof(directoryItem);
+        directoryItem *items = (directoryItem *) malloc(itemsCount * sizeof(directoryItem));
+        getAllDirectoryItems(items, currentInodeIdx, itemsCount);
+
+        // iterate items and check for the same names
+        bool found = false;
+        for(int j = 0; j < itemsCount; j++) {
+            // check if directory name is the same
+            if(strcmp(items[j].name, itemName) == 0 && inodes[items[j].inode].isDirectory) {
+                found = true;
+                currentInodeIdx = items[j].inode;
+                break;
+            }
+        }
+        free(items);
+        free(itemName);
+
+        if(!found) {
+            return Constants::INODE_NOT_EXISTS_CODE;
+        }
+    }
+
+    return currentInodeIdx;
+}
+
+int VFSManager::getFreeInodeIdx() {
+    // iterate all inodes and try to find empty
+    for(int i = 0; i < sb.inodesCount; i++) {
+        if(inodesBitmap[i] == EMPTY) {
+            return i;
+        }
+    }
+
+    // if no free inodes found exit app
+    cout << Constants::FULL_INODES_MSG << endl;
+    exit(EXIT_FAILURE);
+}
+
+bool VFSManager::itemNameUnique(int dirInodeIdx, char *itemName) {
+    // get items count and init themm
+    int itemsCount = inodes[dirInodeIdx].size / sizeof(directoryItem);
+    directoryItem *items = (directoryItem *) malloc(itemsCount * sizeof(directoryItem));
+    // load items
+    getAllDirectoryItems(items, dirInodeIdx, itemsCount);
+
+    // iterate items and check for the same names
+    for(int i = 0; i < itemsCount; i++) {
+        if(strcmp(items[i].name, itemName) == 0) {
+            return false;
+        }
+    }
+    free(items);
+
+    return true;
+}
+
+void VFSManager::getAllDirectoryItems(directoryItem *items, int dirInodeIdx, int itemsCount) {
+    // seek to the address and load items
+    int itemsClusterAddress = sb.dataClustersAddress + inodes[dirInodeIdx].directs[0] * sizeof(sb.clusterSize);
+    fseek(fp, itemsClusterAddress, SEEK_SET);
+    fread(items, sizeof(directoryItem), itemsCount, fp);
+}
+
+void VFSManager::parsePath(string path, int * parentInodeIdx, char * itemName) {
+    // check validity
+    if(path.empty() || path == "/") {
+        *parentInodeIdx = Constants::INODE_NOT_EXISTS_CODE;
+        return;
+    }
+    // whether path is absolut
+    bool absolutPath = false;
+
+    if(path[0] == Constants::PATH_DELIM) {
+        // if path is absolut, remove root dir and mark flag
+        path = path.substr(1, path.length() - 1);
+        absolutPath = true;
+    }
+
+    vector<string> fullPathParts = StringUtils::split(path, Constants::PATH_DELIM);
+    if(fullPathParts.empty()) {
+        *parentInodeIdx = Constants::INODE_NOT_EXISTS_CODE;
+        return;
+    }
+
+    if(fullPathParts.size() == 1) {
+        if(absolutPath) {
+            // creating dir in root
+            *parentInodeIdx = Constants::ROOT_INODE_IDX;
+        }
+        else {
+            // creating dir in current dir
+            *parentInodeIdx = currentInode;
+        }
+    }
+    else {
+        // set itemName to the last path part
+        path = fullPathParts[fullPathParts.size() - 1];
+        itemName = (char *) malloc((path.length() + 1) * sizeof(char));
+        strcpy(itemName, path.c_str());
+        // remove item name from the path
+        fullPathParts.erase(fullPathParts.begin() + fullPathParts.size() - 1);
+
+        if(absolutPath) {
+            *parentInodeIdx = checkPathExists(fullPathParts, Constants::ROOT_INODE_IDX);
+        }
+        else {
+            *parentInodeIdx = checkPathExists(fullPathParts, currentInode);
+        }
+    }
 }

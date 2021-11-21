@@ -4,6 +4,7 @@
 #include <string>
 #include "Constants.h"
 #include "VFSDefinitions.h"
+#include <vector>
 
 using namespace std;
 
@@ -71,6 +72,16 @@ private:
     void saveDirItem(int addressInClusters, directoryItem *item);
     // get index of first free data cluster
     int getFreeClusterIdx();
+    // check if given path exists (starting at dir with passed index), if yes it returns dir inode index, if no it returns -1
+    int checkPathExists(vector<string> path, int startInodeIdx);
+    // get next free inode
+    int getFreeInodeIdx();
+    // checks if name of new item is unique in dir
+    bool itemNameUnique(int dirInodeIdx, char *itemName);
+    // get all directory items by reference
+    void getAllDirectoryItems(directoryItem *items, int dirInodeIdx, int itemsCount);
+    // parse the path - returns value by parentInodeIdx - -1 if path not exits or the index of inode of parent of target item
+    void parsePath(string path, int * parentInodeIdx, char * itemName);
 
 public:
     // constructor

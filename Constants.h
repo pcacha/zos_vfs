@@ -56,6 +56,8 @@ public:
     static const string COMMAND_SUCCESS;
     // cannot create file message
     static const string CANNOT_CREATE_FILE;
+    // path not found message
+    static const string PATH_NOT_FOUND;
     // traversal reference to self
     static char *SELF_REF;
     // traversal reference to parent
@@ -68,8 +70,16 @@ public:
     static const int ITEM_MAX_NAME_LEN = 12;
     // size of cluster [B]
     static const int CLUSTER_SIZE = 8192;
+    // inode idx of root dir
+    static const int ROOT_INODE_IDX = 0;
+    // code for not existing inode
+    static const int INODE_NOT_EXISTS_CODE = -1;
     // no more free data clusters message
     static const string FULL_CLUSTERS_MSG;
+    // no more free inodes message
+    static const string FULL_INODES_MSG;
+    // exist msg
+    static const string EXIST;
 };
 
 
