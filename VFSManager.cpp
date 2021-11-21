@@ -514,7 +514,7 @@ void VFSManager::parseParentPath(string path, int * parentInodeIdx, char ** item
             *parentInodeIdx = checkPathExists(fullPathParts, currentInode);
         }
 
-        if(!inodes[*parentInodeIdx].isDirectory) {
+        if(*parentInodeIdx != Constants::INODE_NOT_EXISTS_CODE && !inodes[*parentInodeIdx].isDirectory) {
             *parentInodeIdx = Constants::INODE_NOT_EXISTS_CODE;
         }
     }
