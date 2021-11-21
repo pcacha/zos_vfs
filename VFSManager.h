@@ -88,6 +88,14 @@ private:
     int getItemInodeIdxByName(int parentInodeIdx, char *itemName);
     // delete item by its inode idx from parent
     void deleteItemFromParentCluster(int parentInodeIdx, char *itemName);
+    // add next data chunk of file to vfs
+    void addDataChunk(int inodeIdx, char *buffer, int bytesRead);
+    // save data chunk to vfs
+    void saveDataChunk(int address, char *buffer, int bytes);
+    // save reference to cluster to cluster
+    void saveReferenceToCluster(int address, int *clusterIdx);
+    // get reference to cluster from cluster
+    int getReferenceFromCluster(int address);
 
 public:
     // constructor

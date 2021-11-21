@@ -8,6 +8,7 @@
 #include <iostream>
 #include <vector>
 #include <fstream>
+#include <math.h>
 
 using namespace std;
 
@@ -391,7 +392,60 @@ void VFSManager::info(string target) {
 }
 
 void VFSManager::incp(string source, string target) {
+    int parentInodeIdx;
+    char *targetName;
+    // parse path
+    parseParentPath(target, &parentInodeIdx, &targetName);
 
+    // inode not exist - path not found
+    if(parentInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
+        cout << Constants::PATH_NOT_FOUND << endl;
+        return;
+    }
+
+    // check if name is unique
+    if(!itemNameUnique(parentInodeIdx, targetName)) {
+        cout << Constants::EXIST << endl;
+        return;
+    }
+
+    // transform name to char pointer
+    char *sourcePath = (char *) malloc((source.length() + 1) * sizeof(char));
+    strcpy(sourcePath, source.c_str());
+    // open target file
+    FILE *sourceFile = fopen(sourcePath, "rb");
+    // check if file exists
+    if(sourceFile == NULL) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
+
+    // create inode, mark it in inode map and init it
+    int newInodeIdx = getFreeInodeIdx();
+    inodesBitmap[newInodeIdx] = FULL;
+    inodes[newInodeIdx].isDirectory = false;
+    inodes[newInodeIdx].references = 1;
+    inodes[newInodeIdx].size = 0;
+
+    // load file data and write it to wfs
+    char *buffer = (char *) malloc(sb.clusterSize * sizeof(char));
+    memset(buffer, 0, sb.clusterSize);
+    int bytesRead;
+    while((bytesRead = fread(buffer, sizeof(char), sb.clusterSize, sourceFile)) > 0) {
+        addDataChunk(newInodeIdx, buffer, bytesRead);
+        memset(buffer, 0, sb.clusterSize);
+    }
+
+    // free sources
+    free(buffer);
+    fclose(sourceFile);
+
+    // add it to parent
+    addDirectoryItem(parentInodeIdx, newInodeIdx, targetName);
+    free(targetName);
+
+    saveMetadata();
+    cout << Constants::COMMAND_SUCCESS << endl;
 }
 
 void VFSManager::outcp(string source, string target) {
@@ -755,4 +809,92 @@ void VFSManager::deleteItemFromParentCluster(int parentInodeIdx, char *itemName)
     inodes[parentInodeIdx].size -= sizeof(directoryItem);
     free(items);
     free(itemsWithoutDeleted);
+}
+
+void VFSManager::addDataChunk(int inodeIdx, char *buffer, int bytesRead) {
+    // helpers
+    int inodeChunksCount = ceil(inodes[inodeIdx].size / (double) sb.clusterSize);
+    int intsPerCluster = sb.clusterSize / sizeof(int);
+
+    if(inodeChunksCount < Constants::DIRECTS_COUNT) {
+        // it is possible to store data chunk in directs
+        // need to allocate cluster, insert data chunk, mark it in bitmap and set direct address
+        int newClusterIdx = getFreeClusterIdx();
+        saveDataChunk(newClusterIdx * sb.clusterSize, buffer, bytesRead);
+        dataBitmap[newClusterIdx] = FULL;
+        inodes[inodeIdx].directs[inodeChunksCount - 1] = newClusterIdx;
+    }
+    else if (inodeChunksCount < Constants::DIRECTS_COUNT + intsPerCluster)  {
+        // first level indirect
+
+        if(inodeChunksCount == Constants::DIRECTS_COUNT) {
+            // setup first level indirect cluster
+            int newClusterIdx = getFreeClusterIdx();
+            dataBitmap[newClusterIdx] = FULL;
+            inodes[inodeIdx].indirect1 = newClusterIdx;
+        }
+
+        // need to allocate cluster, insert data chunk, mark it in bitmap and set cluster id to indirect
+        int newClusterIdx = getFreeClusterIdx();
+        saveDataChunk(newClusterIdx * sb.clusterSize, buffer, bytesRead);
+        dataBitmap[newClusterIdx] = FULL;
+        saveReferenceToCluster(inodes[inodeIdx].indirect1 * sb.clusterSize + sizeof(int) * (inodeChunksCount - 1 - Constants::DIRECTS_COUNT), &newClusterIdx);
+    }
+    else if(inodeChunksCount < Constants::DIRECTS_COUNT + intsPerCluster + intsPerCluster * intsPerCluster) {
+
+        if(inodeChunksCount == Constants::DIRECTS_COUNT + intsPerCluster) {
+            // setup first level indirect cluster
+            int newClusterIdx = getFreeClusterIdx();
+            dataBitmap[newClusterIdx] = FULL;
+            inodes[inodeIdx].indirect2 = newClusterIdx;
+        }
+
+        int idxInSecondLevel = inodeChunksCount - 1 - Constants::DIRECTS_COUNT - intsPerCluster;
+        if(idxInSecondLevel % intsPerCluster == 0) {
+            // setup second level indirect cluster
+            int newClusterIdx = getFreeClusterIdx();
+            dataBitmap[newClusterIdx] = FULL;
+            saveReferenceToCluster(inodes[inodeIdx].indirect2 * sb.clusterSize + sizeof(int) * (idxInSecondLevel / intsPerCluster), &newClusterIdx);
+        }
+
+        // need to allocate cluster, insert data chunk, mark it in bitmap and set cluster id to indirect direct
+        int newClusterIdx = getFreeClusterIdx();
+        saveDataChunk(newClusterIdx * sb.clusterSize, buffer, bytesRead);
+        dataBitmap[newClusterIdx] = FULL;
+        saveReferenceToCluster( getReferenceFromCluster(inodes[inodeIdx].indirect2 * sb.clusterSize + sizeof(int) * (idxInSecondLevel / intsPerCluster))
+            * sb.clusterSize + sizeof(int) * (idxInSecondLevel % intsPerCluster), &newClusterIdx);
+    }
+    else {
+        cout << Constants::FULL_REFERENCES_MSG << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    // increment size
+    inodes[inodeIdx].size += bytesRead;
+}
+
+void VFSManager::saveDataChunk(int address, char *buffer, int bytes) {
+    // set right address and save
+    address += sb.dataClustersAddress;
+    fseek(fp, address, SEEK_SET);
+    fwrite(buffer, sizeof(char), bytes, fp);
+    fflush(fp);
+}
+
+void VFSManager::saveReferenceToCluster(int address, int *clusterIdx) {
+    // set right address and save
+    address += sb.dataClustersAddress;
+    fseek(fp, address, SEEK_SET);
+    fwrite(clusterIdx, sizeof(int), 1, fp);
+    fflush(fp);
+}
+
+int VFSManager::getReferenceFromCluster(int address) {
+    // set right address and save
+    address += sb.dataClustersAddress;
+    fseek(fp, address, SEEK_SET);
+    int result;
+    fread(&result, sizeof(int), 1, fp);
+    fflush(fp);
+    return result;
 }

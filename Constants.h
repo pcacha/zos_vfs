@@ -76,6 +76,8 @@ public:
     static const int INODE_NOT_EXISTS_CODE = -1;
     // no more free data clusters message
     static const string FULL_CLUSTERS_MSG;
+    // no more references available - file is too big
+    static const string FULL_REFERENCES_MSG;
     // no more free inodes message
     static const string FULL_INODES_MSG;
     // dir is not empty msg
