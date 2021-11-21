@@ -420,11 +420,45 @@ void VFSManager::load(string target) {
 }
 
 void VFSManager::ln(string source, string target) {
+    int sourceInodeIdx;
 
+    // parse source path
+    parsePath(source, &sourceInodeIdx);
+
+    // inode not exists or it is a directory - source path not found
+    if(sourceInodeIdx == Constants::INODE_NOT_EXISTS_CODE || inodes[sourceInodeIdx].isDirectory) {
+        cout << Constants::PATH_NOT_FOUND << endl;
+        return;
+    }
+
+    int parentInodeIdx;
+    char *targetName;
+    // parse target path
+    parseParentPath(target, &parentInodeIdx, &targetName);
+
+    // target parent inode not exist - path not found
+    if(parentInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
+        cout << Constants::PATH_NOT_FOUND << endl;
+        return;
+    }
+
+    // check if name is unique
+    if(!itemNameUnique(parentInodeIdx, targetName)) {
+        cout << Constants::EXIST << endl;
+        return;
+    }
+
+    // add hardlink to parent dir
+    addDirectoryItem(parentInodeIdx, sourceInodeIdx, targetName);
+    // increment hardlink references
+    inodes[sourceInodeIdx].references += 1;
+
+    saveMetadata();
+    cout << Constants::COMMAND_SUCCESS << endl;
 }
 
 void VFSManager::saveMetadata() {
-    // save metadata and close file
+    // save metadata
     fseek(fp, sb.inodesBitmapAddress, SEEK_SET);
     fwrite(inodesBitmap, sizeof(char), sb.inodesCount, fp);
     fwrite(dataBitmap, sizeof(char), sb.clusterCount, fp);
