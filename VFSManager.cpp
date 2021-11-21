@@ -316,8 +316,73 @@ void VFSManager::cat(string target) {
 
 }
 
-void VFSManager::cd(string path) {
+void VFSManager::cd(string target) {
+    // update current inode
+    int cdDirInodeIdx;
+    if(target.empty()) {
+        // no path defined - jump to root
+        currentInode = Constants::ROOT_INODE_IDX;
+    }
+    else {
+        // parse path
+        parsePath(target, &cdDirInodeIdx);
 
+        // inode not exist of it is not dir- path not found
+        if(cdDirInodeIdx == Constants::INODE_NOT_EXISTS_CODE || !inodes[cdDirInodeIdx].isDirectory) {
+            cout << Constants::PATH_NOT_FOUND << endl;
+            return;
+        }
+        currentInode = cdDirInodeIdx;
+    }
+
+    // update current working directory
+    if(target[0] == '/') {
+        // path is absolute
+        memset(path, 0, 1000);
+        strcpy(path, target.c_str());
+    }
+    else {
+        // path is relative
+        string stringPath(path);
+        vector<string> pathParts;
+        if(stringPath != "/") {
+            stringPath = stringPath.substr(1, stringPath.size() - 1);
+            pathParts = StringUtils::split(stringPath, Constants::PATH_DELIM);
+        }
+
+        // iterate through user written relative path
+        vector<string> userPath =  StringUtils::split(target, Constants::PATH_DELIM);
+        for(int i = 0; i < userPath.size(); i++) {
+            string current = userPath[i];
+            if(current == ".") {
+                // current dir
+                continue;
+            }
+            if(current == "..") {
+                // parent dir
+                if(!pathParts.empty()) {
+                    pathParts.erase(pathParts.begin() + pathParts.size() - 1);
+                }
+                continue;
+            }
+            pathParts.push_back(current);
+        }
+
+        memset(path, 0, 1000);
+        if(pathParts.empty()) {
+            // if parts are empty - path is root
+            strcpy(path, "/");
+        }
+        else {
+            // join parts to full path
+            stringPath = "/" + pathParts[0];
+            for(int i = 1; i < pathParts.size(); i++) {
+                stringPath += "/" + pathParts[i];
+            }
+            strcpy(path, stringPath.c_str());
+        }
+    }
+    cout << Constants::COMMAND_SUCCESS << endl;
 }
 
 void VFSManager::info(string target) {

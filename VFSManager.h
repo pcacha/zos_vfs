@@ -49,7 +49,7 @@ private:
     // print text
     void cat(string target);
     // change directory
-    void cd(string path);
+    void cd(string target);
     // print info about item
     void info(string target);
     // copy file to vfs
