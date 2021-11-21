@@ -241,7 +241,39 @@ void VFSManager::mkdir(string target) {
 }
 
 void VFSManager::rmdir(string target) {
+    int parentInodeIdx;
+    char *targetName;
+    // parse path
+    parseParentPath(target, &parentInodeIdx, &targetName);
 
+    // inode not exist or user wants to delete hidden dirs - path not found
+    if(parentInodeIdx == Constants::INODE_NOT_EXISTS_CODE || strcmp(targetName, ".") == 0 || strcmp(targetName, "..") == 0) {
+        cout << Constants::PATH_NOT_FOUND << endl;
+        return;
+    }
+
+    // get inode idx of target dir
+    int deleteDirInodeIdx = getItemInodeIdxByName(parentInodeIdx, targetName);
+    // check if it was found and if it is dir
+    if(deleteDirInodeIdx == Constants::INODE_NOT_EXISTS_CODE || !inodes[deleteDirInodeIdx].isDirectory) {
+        cout << Constants::PATH_NOT_FOUND << endl;
+        return;
+    }
+    // check if dir is empty
+    if((inodes[deleteDirInodeIdx].size / sizeof(directoryItem)) > 2) {
+        cout << Constants::NOT_EMPTY << endl;
+        return;
+    }
+
+    // delete folder from parent folder
+    deleteItemFromParentCluster(parentInodeIdx, targetName);
+
+    // remove from bitmaps
+    dataBitmap[inodes[deleteDirInodeIdx].directs[0]] = EMPTY;
+    inodesBitmap[deleteDirInodeIdx] = EMPTY;
+
+    saveMetadata();
+    cout << Constants::COMMAND_SUCCESS << endl;
 }
 
 void VFSManager::ls(string target) {
@@ -443,7 +475,7 @@ int VFSManager::getFreeInodeIdx() {
 }
 
 bool VFSManager::itemNameUnique(int dirInodeIdx, char *itemName) {
-    // get items count and init themm
+    // get items count and init them
     int itemsCount = inodes[dirInodeIdx].size / sizeof(directoryItem);
     directoryItem *items = (directoryItem *) malloc(itemsCount * sizeof(directoryItem));
     // load items
@@ -452,6 +484,7 @@ bool VFSManager::itemNameUnique(int dirInodeIdx, char *itemName) {
     // iterate items and check for the same names
     for(int i = 0; i < itemsCount; i++) {
         if(strcmp(items[i].name, itemName) == 0) {
+            free(items);
             return false;
         }
     }
@@ -556,4 +589,53 @@ void VFSManager::parsePath(string path, int * targetInodeIdx) {
     else {
         *targetInodeIdx = checkPathExists(fullPathParts, currentInode);
     }
+}
+
+int VFSManager::getItemInodeIdxByName(int parentInodeIdx, char *itemName) {
+    // get items count and init them
+    int itemsCount = inodes[parentInodeIdx].size / sizeof(directoryItem);
+    directoryItem *items = (directoryItem *) malloc(itemsCount * sizeof(directoryItem));
+    // load items
+    getAllDirectoryItems(items, parentInodeIdx, itemsCount);
+
+    // iterate items and check for the same names, if names are equal, return inode idx
+    for(int i = 0; i < itemsCount; i++) {
+        if(strcmp(items[i].name, itemName) == 0) {
+            int resultIdx = items[i].inode;
+            free(items);
+            return resultIdx;
+        }
+    }
+    free(items);
+
+    return Constants::INODE_NOT_EXISTS_CODE;
+}
+
+void VFSManager::deleteItemFromParentCluster(int parentInodeIdx, char *itemName) {
+    // get all dir items
+    int itemsCount = inodes[parentInodeIdx].size / sizeof(directoryItem);
+    directoryItem *items = (directoryItem *) malloc(itemsCount * sizeof(directoryItem));
+    // load items
+    getAllDirectoryItems(items, parentInodeIdx, itemsCount);
+
+    // init array for items without deleted
+    directoryItem *itemsWithoutDeleted = (directoryItem *) malloc((itemsCount - 1) * sizeof(directoryItem));
+    // fill array with items without deleted
+    int j = 0;
+    for(int i = 0; i < (itemsCount - 1); i++) {
+        if(strcmp(items[j].name, itemName) == 0) {
+            j++;
+        }
+        itemsWithoutDeleted[i] = items[j];
+        j++;
+    }
+    // save directory items without deleted
+    int address = sb.dataClustersAddress + inodes[parentInodeIdx].directs[0] * sb.clusterSize;
+    fseek(fp, address, SEEK_SET);
+    fwrite(itemsWithoutDeleted, sizeof(directoryItem), (itemsCount - 1) , fp);
+    fflush(fp);
+
+    inodes[parentInodeIdx].size -= sizeof(directoryItem);
+    free(items);
+    free(itemsWithoutDeleted);
 }

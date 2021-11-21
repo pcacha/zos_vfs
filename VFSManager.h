@@ -84,6 +84,10 @@ private:
     void parseParentPath(string path, int * parentInodeIdx, char ** itemName);
     // parse path - returns value by targetInodeIdx -> -1 if path not exists or the index of inode of target item
     void parsePath(string path, int * targetInodeIdx);
+    // get the inode idx of item with given name, if not exists, -1 is returned
+    int getItemInodeIdxByName(int parentInodeIdx, char *itemName);
+    // delete item by its inode idx from parent
+    void deleteItemFromParentCluster(int parentInodeIdx, char *itemName);
 
 public:
     // constructor

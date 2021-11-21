@@ -78,6 +78,8 @@ public:
     static const string FULL_CLUSTERS_MSG;
     // no more free inodes message
     static const string FULL_INODES_MSG;
+    // dir is not empty msg
+    static const string NOT_EMPTY;
     // exist msg
     static const string EXIST;
 };

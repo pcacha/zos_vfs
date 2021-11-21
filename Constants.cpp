@@ -27,5 +27,6 @@ const string Constants::FULL_CLUSTERS_MSG = "No more free data clusters!";
 const string Constants::FULL_INODES_MSG = "No more free inodes!";
 const string Constants::PATH_NOT_FOUND = "PATH NOT FOUND";
 const string Constants::EXIST = "EXIST";
+const string Constants::NOT_EMPTY = "NOT EMPTY";
 char * Constants::SELF_REF = ".";
 char * Constants::PARENT_REF = "..";
