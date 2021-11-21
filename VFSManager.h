@@ -80,8 +80,10 @@ private:
     bool itemNameUnique(int dirInodeIdx, char *itemName);
     // get all directory items by reference
     void getAllDirectoryItems(directoryItem *items, int dirInodeIdx, int itemsCount);
-    // parse the path - returns value by parentInodeIdx - -1 if path not exits or the index of inode of parent of target item
-    void parsePath(string path, int * parentInodeIdx, char * itemName);
+    // parse parent path - returns value by parentInodeIdx -> -1 if path not exits or the index of inode of parent of target item
+    void parseParentPath(string path, int * parentInodeIdx, char ** itemName);
+    // parse path - returns value by targetInodeIdx -> -1 if path not exists or the index of inode of target item
+    void parsePath(string path, int * targetInodeIdx);
 
 public:
     // constructor

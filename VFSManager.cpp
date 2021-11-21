@@ -209,7 +209,7 @@ void VFSManager::mkdir(string target) {
     int parentInodeIdx;
     char *targetName;
     // parse path
-    parsePath(target, &parentInodeIdx, targetName);
+    parseParentPath(target, &parentInodeIdx, &targetName);
 
     // inode not exist - path not found
     if(parentInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
@@ -251,37 +251,11 @@ void VFSManager::ls(string target) {
         lsDirInodeIdx = currentInode;
     }
     else {
-        // path defined
-        int parentInodeIdx;
-        char *targetName;
         // parse path
-        parsePath(target, &parentInodeIdx, targetName);
+        parsePath(target, &lsDirInodeIdx);
 
         // inode not exist - path not found
-        if(parentInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
-            cout << Constants::PATH_NOT_FOUND << endl;
-            return;
-        }
-
-        // get items of parent dir
-        int itemsCount = inodes[parentInodeIdx].size / sizeof(directoryItem);
-        directoryItem *items = (directoryItem *) malloc(itemsCount * sizeof(directoryItem));
-        getAllDirectoryItems(items, parentInodeIdx, itemsCount);
-
-        // iterate items and check for the same names
-        bool found = false;
-        for(int j = 0; j < itemsCount; j++) {
-            // check if directory name is the same
-            if(strcmp(items[j].name, targetName) == 0 && inodes[items[j].inode].isDirectory) {
-                found = true;
-                lsDirInodeIdx = items[j].inode;
-                break;
-            }
-        }
-        free(items);
-        free(targetName);
-
-        if(!found) {
+        if(lsDirInodeIdx == Constants::INODE_NOT_EXISTS_CODE || !inodes[lsDirInodeIdx].isDirectory) {
             cout << Constants::PATH_NOT_FOUND << endl;
             return;
         }
@@ -402,7 +376,8 @@ void VFSManager::addDirectoryItem(int dirInodeIdx, int targetInodeIdx, char *ite
 
 void VFSManager::saveDirItem(int addressInClusters, directoryItem *item) {
     // set right address and save
-    fseek(fp, sb.dataClustersAddress + addressInClusters, SEEK_SET);
+    int address = sb.dataClustersAddress + addressInClusters;
+    fseek(fp, address, SEEK_SET);
     fwrite(item, sizeof(directoryItem), 1, fp);
     fflush(fp);
 }
@@ -423,7 +398,7 @@ int VFSManager::getFreeClusterIdx() {
 int VFSManager::checkPathExists(vector<string> path, int startInodeIdx) {
     int currentInodeIdx = startInodeIdx;
     // iterate through path
-    for(int i = 0; i < path.size() - 1; i++) {
+    for(int i = 0; i < path.size(); i++) {
         // convert current dir name to char pointer
         char *itemName = (char *) malloc((path[i].length() + 1) * sizeof(char));
         strcpy(itemName, path[i].c_str());
@@ -437,7 +412,7 @@ int VFSManager::checkPathExists(vector<string> path, int startInodeIdx) {
         bool found = false;
         for(int j = 0; j < itemsCount; j++) {
             // check if directory name is the same
-            if(strcmp(items[j].name, itemName) == 0 && inodes[items[j].inode].isDirectory) {
+            if(strcmp(items[j].name, itemName) == 0) {
                 found = true;
                 currentInodeIdx = items[j].inode;
                 break;
@@ -487,12 +462,12 @@ bool VFSManager::itemNameUnique(int dirInodeIdx, char *itemName) {
 
 void VFSManager::getAllDirectoryItems(directoryItem *items, int dirInodeIdx, int itemsCount) {
     // seek to the address and load items
-    int itemsClusterAddress = sb.dataClustersAddress + inodes[dirInodeIdx].directs[0] * sizeof(sb.clusterSize);
+    int itemsClusterAddress = sb.dataClustersAddress + inodes[dirInodeIdx].directs[0] * sb.clusterSize;
     fseek(fp, itemsClusterAddress, SEEK_SET);
     fread(items, sizeof(directoryItem), itemsCount, fp);
 }
 
-void VFSManager::parsePath(string path, int * parentInodeIdx, char * itemName) {
+void VFSManager::parseParentPath(string path, int * parentInodeIdx, char ** itemName) {
     // check validity
     if(path.empty() || path == "/") {
         *parentInodeIdx = Constants::INODE_NOT_EXISTS_CODE;
@@ -513,6 +488,11 @@ void VFSManager::parsePath(string path, int * parentInodeIdx, char * itemName) {
         return;
     }
 
+    // set itemName to the last path part
+    path = fullPathParts[fullPathParts.size() - 1];
+    *itemName = (char *) malloc((path.length() + 1) * sizeof(char));
+    strcpy(*itemName, path.c_str());
+
     if(fullPathParts.size() == 1) {
         if(absolutPath) {
             // creating dir in root
@@ -524,10 +504,6 @@ void VFSManager::parsePath(string path, int * parentInodeIdx, char * itemName) {
         }
     }
     else {
-        // set itemName to the last path part
-        path = fullPathParts[fullPathParts.size() - 1];
-        itemName = (char *) malloc((path.length() + 1) * sizeof(char));
-        strcpy(itemName, path.c_str());
         // remove item name from the path
         fullPathParts.erase(fullPathParts.begin() + fullPathParts.size() - 1);
 
@@ -537,5 +513,47 @@ void VFSManager::parsePath(string path, int * parentInodeIdx, char * itemName) {
         else {
             *parentInodeIdx = checkPathExists(fullPathParts, currentInode);
         }
+
+        if(!inodes[*parentInodeIdx].isDirectory) {
+            *parentInodeIdx = Constants::INODE_NOT_EXISTS_CODE;
+        }
+    }
+}
+
+void VFSManager::parsePath(string path, int * targetInodeIdx) {
+    // check if it is current dir
+    if(path.empty()) {
+        *targetInodeIdx = currentInode;
+        return;
+    }
+
+    // check if it is root dir
+    if(path == "/") {
+        *targetInodeIdx = Constants::ROOT_INODE_IDX;
+        return;
+    }
+
+    // whether path is absolut
+    bool absolutPath = false;
+
+    if(path[0] == Constants::PATH_DELIM) {
+        // if path is absolut, remove root dir and mark flag
+        path = path.substr(1, path.length() - 1);
+        absolutPath = true;
+    }
+
+    // split path to parts
+    vector<string> fullPathParts = StringUtils::split(path, Constants::PATH_DELIM);
+    if(fullPathParts.empty()) {
+        *targetInodeIdx = Constants::INODE_NOT_EXISTS_CODE;
+        return;
+    }
+
+    // check if path exist
+    if(absolutPath) {
+        *targetInodeIdx = checkPathExists(fullPathParts, Constants::ROOT_INODE_IDX);
+    }
+    else {
+        *targetInodeIdx = checkPathExists(fullPathParts, currentInode);
     }
 }
