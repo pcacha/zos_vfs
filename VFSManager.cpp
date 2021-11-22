@@ -315,7 +315,48 @@ void VFSManager::ls(string target) {
 }
 
 void VFSManager::cat(string target) {
+    int targetInodeIdx;
+    // parse path
+    parsePath(target, &targetInodeIdx);
 
+    // inode not exist - file not found
+    if(targetInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
+
+    // check if source is file
+    if(inodes[targetInodeIdx].isDirectory) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
+
+    // get info of file
+    int bytesSize = inodes[targetInodeIdx].size;
+    vector<int> fileDataClusters = getDataClustersIdxs(targetInodeIdx, ceil(bytesSize / (double) sb.clusterSize));
+
+    // load file data and write it to console
+    char *buffer = (char *) malloc((sb.clusterSize + 1) * sizeof(char));
+    memset(buffer, '\0', sb.clusterSize + 1);
+    for(int i = 0; i < fileDataClusters.size(); i++) {
+        int bytesToWrite;
+        if(bytesSize >= sb.clusterSize) {
+            bytesToWrite = sb.clusterSize;
+        }
+        else {
+            bytesToWrite = bytesSize;
+        }
+
+        readDataChunk(fileDataClusters[i], buffer, bytesToWrite);
+        cout << buffer << flush;
+
+        memset(buffer, '\0', sb.clusterSize + 1);
+        bytesSize -= bytesToWrite;
+    }
+
+    // free sources
+    free(buffer);
+    saveMetadata();
 }
 
 void VFSManager::cd(string target) {
