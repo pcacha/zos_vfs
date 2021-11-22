@@ -429,7 +429,41 @@ void VFSManager::cd(string target) {
 }
 
 void VFSManager::info(string target) {
+    int targetInodeIdx;
+    // parse path
+    parsePath(target, &targetInodeIdx);
 
+    // inode not exist - file not found
+    if(targetInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
+
+    // get item name
+    string dirName;
+    if(target == "/") {
+        dirName = "/";
+    }
+    else {
+        vector<string> parts = StringUtils::split(target, Constants::PATH_DELIM);
+        dirName = parts[parts.size() - 1];
+    }
+
+    inode targetInode = inodes[targetInodeIdx];
+    // print info
+    if(targetInode.isDirectory) {
+        // for dirs
+        cout << dirName << " - " << targetInode.size << " - i-node " << targetInodeIdx << " - " << targetInode.directs[0] << endl;
+    }
+    else {
+        // for files
+        cout << dirName << " - " << targetInode.size << " - i-node " << targetInodeIdx << " - " << flush;
+        vector<int> clusters = getDataClustersIdxs(targetInodeIdx, ceil(targetInode.size / (double) sb.clusterSize));
+        for(int i = 0; i < clusters.size(); i++) {
+            cout << clusters[i] << " " << flush;
+        }
+        cout << endl;
+    }
 }
 
 void VFSManager::incp(string source, string target) {
