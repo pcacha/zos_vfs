@@ -96,6 +96,12 @@ private:
     void saveReferenceToCluster(int address, int *clusterIdx);
     // get reference to cluster from cluster
     int getReferenceFromCluster(int address);
+    // get the data cluster indexes of given item
+    vector<int> getDataClustersIdxs(int sourceInodeIdx, int clusterCount);
+    // read chunk of data from vfs
+    void readDataChunk(int dataClusterIdx, char *buffer, int bytesCount);
+    // get index of data cluster based on index of data chunk
+    int getDataClusterIdxByChunkIdx(int sourceInodeIdx, int chunkIdx);
 
 public:
     // constructor

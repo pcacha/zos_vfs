@@ -427,7 +427,7 @@ void VFSManager::incp(string source, string target) {
     inodes[newInodeIdx].references = 1;
     inodes[newInodeIdx].size = 0;
 
-    // load file data and write it to wfs
+    // load file data and write it to vfs
     char *buffer = (char *) malloc(sb.clusterSize * sizeof(char));
     memset(buffer, 0, sb.clusterSize);
     int bytesRead;
@@ -449,7 +449,63 @@ void VFSManager::incp(string source, string target) {
 }
 
 void VFSManager::outcp(string source, string target) {
+    int sourceInodeIdx;
+    // parse path
+    parsePath(source, &sourceInodeIdx);
 
+    // inode not exist - path not found
+    if(sourceInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
+
+    // check if source is file
+    if(inodes[sourceInodeIdx].isDirectory) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
+
+    // transform name to char pointer
+    char *targetPath = (char *) malloc((target.length() + 1) * sizeof(char));
+    strcpy(targetPath, target.c_str());
+    // open target file
+    FILE *targetFile = fopen(targetPath, "wb");
+    // check if file exists
+    if(targetFile == NULL) {
+        cout << Constants::PATH_NOT_FOUND << endl;
+        return;
+    }
+
+    // get info of file
+    int bytesSize = inodes[sourceInodeIdx].size;
+    vector<int> fileDataClusters = getDataClustersIdxs(sourceInodeIdx, ceil(bytesSize / (double) sb.clusterSize));
+
+    // load file data and write it to fs
+    char *buffer = (char *) malloc(sb.clusterSize * sizeof(char));
+    memset(buffer, 0, sb.clusterSize);
+    for(int i = 0; i < fileDataClusters.size(); i++) {
+        int bytesToWrite;
+        if(bytesSize >= sb.clusterSize) {
+            bytesToWrite = sb.clusterSize;
+        }
+        else {
+            bytesToWrite = bytesSize;
+        }
+
+        readDataChunk(fileDataClusters[i], buffer, bytesToWrite);
+        fwrite(buffer, sizeof(char), bytesToWrite, targetFile);
+
+        memset(buffer, 0, sb.clusterSize);
+        bytesSize -= bytesToWrite;
+    }
+
+    // free sources
+    free(buffer);
+    free(targetPath);
+    fclose(targetFile);
+
+    saveMetadata();
+    cout << Constants::COMMAND_SUCCESS << endl;
 }
 
 void VFSManager::load(string target) {
@@ -822,7 +878,7 @@ void VFSManager::addDataChunk(int inodeIdx, char *buffer, int bytesRead) {
         int newClusterIdx = getFreeClusterIdx();
         saveDataChunk(newClusterIdx * sb.clusterSize, buffer, bytesRead);
         dataBitmap[newClusterIdx] = FULL;
-        inodes[inodeIdx].directs[inodeChunksCount - 1] = newClusterIdx;
+        inodes[inodeIdx].directs[inodeChunksCount] = newClusterIdx;
     }
     else if (inodeChunksCount < Constants::DIRECTS_COUNT + intsPerCluster)  {
         // first level indirect
@@ -838,7 +894,7 @@ void VFSManager::addDataChunk(int inodeIdx, char *buffer, int bytesRead) {
         int newClusterIdx = getFreeClusterIdx();
         saveDataChunk(newClusterIdx * sb.clusterSize, buffer, bytesRead);
         dataBitmap[newClusterIdx] = FULL;
-        saveReferenceToCluster(inodes[inodeIdx].indirect1 * sb.clusterSize + sizeof(int) * (inodeChunksCount - 1 - Constants::DIRECTS_COUNT), &newClusterIdx);
+        saveReferenceToCluster(inodes[inodeIdx].indirect1 * sb.clusterSize + sizeof(int) * (inodeChunksCount - Constants::DIRECTS_COUNT), &newClusterIdx);
     }
     else if(inodeChunksCount < Constants::DIRECTS_COUNT + intsPerCluster + intsPerCluster * intsPerCluster) {
 
@@ -849,7 +905,7 @@ void VFSManager::addDataChunk(int inodeIdx, char *buffer, int bytesRead) {
             inodes[inodeIdx].indirect2 = newClusterIdx;
         }
 
-        int idxInSecondLevel = inodeChunksCount - 1 - Constants::DIRECTS_COUNT - intsPerCluster;
+        int idxInSecondLevel = inodeChunksCount - Constants::DIRECTS_COUNT - intsPerCluster;
         if(idxInSecondLevel % intsPerCluster == 0) {
             // setup second level indirect cluster
             int newClusterIdx = getFreeClusterIdx();
@@ -869,6 +925,7 @@ void VFSManager::addDataChunk(int inodeIdx, char *buffer, int bytesRead) {
         exit(EXIT_FAILURE);
     }
 
+    fflush(fp);
     // increment size
     inodes[inodeIdx].size += bytesRead;
 }
@@ -897,4 +954,40 @@ int VFSManager::getReferenceFromCluster(int address) {
     fread(&result, sizeof(int), 1, fp);
     fflush(fp);
     return result;
+}
+
+vector<int> VFSManager::getDataClustersIdxs(int sourceInodeIdx, int clusterCount) {
+    vector<int> clusterIdxs;
+
+    // add indexes of all culsters
+    for(int i = 0; i < clusterCount; i++) {
+        clusterIdxs.push_back(getDataClusterIdxByChunkIdx(sourceInodeIdx, i));
+    }
+
+    return clusterIdxs;
+}
+
+int VFSManager::getDataClusterIdxByChunkIdx(int sourceInodeIdx, int chunkIdx) {
+    int intsPerCluster = sb.clusterSize / sizeof(int);
+
+    if(chunkIdx < Constants::DIRECTS_COUNT) {
+        // it is in direct
+        return inodes[sourceInodeIdx].directs[chunkIdx];
+    }
+    else if(chunkIdx < Constants::DIRECTS_COUNT + intsPerCluster) {
+        // it is in indirect1
+        int indirect1Idx = chunkIdx - Constants::DIRECTS_COUNT;
+        return getReferenceFromCluster(inodes[sourceInodeIdx].indirect1 * sb.clusterSize + indirect1Idx * sizeof(int));
+    }
+    else {
+        // it is in indirect2
+        int indirect2Idx = chunkIdx - Constants::DIRECTS_COUNT - intsPerCluster;
+        int pointerToAnotherCluster = getReferenceFromCluster(inodes[sourceInodeIdx].indirect2 * sb.clusterSize + (indirect2Idx / intsPerCluster) * sizeof(int));
+        return getReferenceFromCluster(pointerToAnotherCluster * sb.clusterSize + (indirect2Idx % intsPerCluster) * sizeof(int));
+    }
+}
+
+void VFSManager::readDataChunk(int dataClusterIdx, char *buffer, int bytesCount) {
+    fseek(fp, sb.dataClustersAddress + dataClusterIdx * sb.clusterSize, SEEK_SET);
+    fread(buffer, sizeof(char), bytesCount, fp);
 }
