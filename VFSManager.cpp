@@ -812,7 +812,7 @@ void VFSManager::load(string target) {
         handleCommand(command);
     }
 
-    cout << Constants::COMMAND_SUCCESS << endl;
+    cout << endl <<  Constants::COMMAND_SUCCESS << endl;
 }
 
 void VFSManager::ln(string source, string target) {
