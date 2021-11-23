@@ -196,9 +196,107 @@ void VFSManager::format(string size) {
 }
 
 void VFSManager::cp(string source, string target) {
-    // todo
+    int sourceParentInodeIdx;
+    char *sourceName;
+    // parse path
+    parseParentPath(source, &sourceParentInodeIdx, &sourceName);
 
+    // inode not exist - file not found
+    if(sourceParentInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
 
+    // get inode idx of source file
+    int sourceInodeIdx = getItemInodeIdxByName(sourceParentInodeIdx, sourceName);
+    // check if it was found and if it is file
+    if(sourceInodeIdx == Constants::INODE_NOT_EXISTS_CODE || inodes[sourceInodeIdx].isDirectory) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
+
+    int targetParentInodeIdx;
+    char *targetName;
+    // parse path
+    parseParentPath(target, &targetParentInodeIdx, &targetName);
+
+    // inode not exist - path not found
+    if(targetParentInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
+        cout << Constants::PATH_NOT_FOUND << endl;
+        return;
+    }
+
+    // get inode idx of target file
+    int targetInodeIdx = getItemInodeIdxByName(targetParentInodeIdx, targetName);
+    bool targetIsDirFlag = false;
+    // check if it was found
+    if(targetInodeIdx != Constants::INODE_NOT_EXISTS_CODE) {
+        if(inodes[targetInodeIdx].isDirectory) {
+            // if it is dir
+            targetParentInodeIdx = targetInodeIdx;
+            targetIsDirFlag = true;
+        }
+        else {
+            // if it is file
+            if(sourceParentInodeIdx != targetParentInodeIdx) {
+                rm(target);
+            }
+            else {
+                if(strcmp(sourceName, targetName) == 0) {
+                    cout << Constants::COMMAND_SUCCESS << endl;
+                    return;
+                }
+                else {
+                    rm(target);
+                }
+            }
+        }
+    }
+
+    // create inode, mark it in inode map and init it
+    int newInodeIdx = getFreeInodeIdx();
+    inodesBitmap[newInodeIdx] = FULL;
+    inodes[newInodeIdx].isDirectory = false;
+    inodes[newInodeIdx].references = 1;
+    inodes[newInodeIdx].size = 0;
+
+    // add dir item to new parent folder
+    if(targetIsDirFlag) {
+        addDirectoryItem(targetParentInodeIdx, newInodeIdx, sourceName);
+    }
+    else {
+        addDirectoryItem(targetParentInodeIdx, newInodeIdx, targetName);
+    }
+
+    // now copy the data
+    // get the source data clusters indexes
+    int bytesSize = inodes[sourceInodeIdx].size;
+    vector<int> clustersToCopyIdxs = getDataClustersIdxs(sourceInodeIdx, ceil(bytesSize / (double) sb.clusterSize));
+    // load file data and write it to new location
+    char *buffer = (char *) malloc(sb.clusterSize * sizeof(char));
+    memset(buffer, 0, sb.clusterSize);
+    for(int i = 0; i < clustersToCopyIdxs.size(); i++) {
+        int bytesRead;
+        if(bytesSize >= sb.clusterSize) {
+            bytesRead = sb.clusterSize;
+        }
+        else {
+            bytesRead = bytesSize;
+        }
+
+        // load data
+        fseek(fp, sb.dataClustersAddress + clustersToCopyIdxs[i] * sb.clusterSize, SEEK_SET);
+        fread(buffer, sizeof(char), bytesRead, fp);
+
+        // store data
+        addDataChunk(newInodeIdx, buffer, bytesRead);
+        memset(buffer, 0, sb.clusterSize);
+        bytesSize -= bytesRead;
+    }
+
+    free(targetName);
+    free(sourceName);
+    free(buffer);
     saveMetadata();
     cout << Constants::COMMAND_SUCCESS << endl;
 }
@@ -261,7 +359,6 @@ void VFSManager::mv(string source, string target) {
     else {
         addDirectoryItem(targetParentInodeIdx, sourceInodeIdx, targetName);
     }
-
 
     free(targetName);
     free(sourceName);
