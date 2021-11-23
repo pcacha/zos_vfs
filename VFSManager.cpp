@@ -204,7 +204,55 @@ void VFSManager::mv(string source, string target) {
 }
 
 void VFSManager::rm(string target) {
+    int parentInodeIdx;
+    char *targetName;
+    // parse path
+    parseParentPath(target, &parentInodeIdx, &targetName);
 
+    // inode not exist - path not found
+    if(parentInodeIdx == Constants::INODE_NOT_EXISTS_CODE) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
+
+    // get inode idx of target file
+    int deleteFileInodeIdx = getItemInodeIdxByName(parentInodeIdx, targetName);
+    // check if it was found and if it is file
+    if(deleteFileInodeIdx == Constants::INODE_NOT_EXISTS_CODE || inodes[deleteFileInodeIdx].isDirectory) {
+        cout << Constants::FILE_NOT_FOUND << endl;
+        return;
+    }
+
+    if(inodes[deleteFileInodeIdx].references > 1) {
+        // for hardlinks
+        inodes[deleteFileInodeIdx].references -= 1;
+        deleteItemFromParentCluster(parentInodeIdx, targetName);
+        saveMetadata();
+        cout << Constants::COMMAND_SUCCESS << endl;
+        return;
+    }
+
+    // if it is not hardlink
+    // delete file from parent folder
+    deleteItemFromParentCluster(parentInodeIdx, targetName);
+
+    // remove from inode bitmap
+    inodesBitmap[deleteFileInodeIdx] = EMPTY;
+
+    // delete data clusters from data bitmap
+    vector<int> dataClustersIdxs = getDataClustersIdxs(deleteFileInodeIdx, ceil(inodes[deleteFileInodeIdx].size / (double) sb.clusterSize));
+    for(int i = 0; i < dataClustersIdxs.size(); i++) {
+        dataBitmap[dataClustersIdxs[i]] = EMPTY;
+    }
+
+    // delete indirect clusters from data bitmap
+    vector<int> indirectClustersIdxs = getIndirectClustersIdxs(deleteFileInodeIdx, ceil(inodes[deleteFileInodeIdx].size / (double) sb.clusterSize));
+    for(int i = 0; i < indirectClustersIdxs.size(); i++) {
+        dataBitmap[indirectClustersIdxs[i]] = EMPTY;
+    }
+
+    saveMetadata();
+    cout << Constants::COMMAND_SUCCESS << endl;
 }
 
 void VFSManager::mkdir(string target) {
@@ -1034,7 +1082,7 @@ int VFSManager::getReferenceFromCluster(int address) {
 vector<int> VFSManager::getDataClustersIdxs(int sourceInodeIdx, int clusterCount) {
     vector<int> clusterIdxs;
 
-    // add indexes of all culsters
+    // add indexes of all data clusters
     for(int i = 0; i < clusterCount; i++) {
         clusterIdxs.push_back(getDataClusterIdxByChunkIdx(sourceInodeIdx, i));
     }
@@ -1060,6 +1108,38 @@ int VFSManager::getDataClusterIdxByChunkIdx(int sourceInodeIdx, int chunkIdx) {
         int pointerToAnotherCluster = getReferenceFromCluster(inodes[sourceInodeIdx].indirect2 * sb.clusterSize + (indirect2Idx / intsPerCluster) * sizeof(int));
         return getReferenceFromCluster(pointerToAnotherCluster * sb.clusterSize + (indirect2Idx % intsPerCluster) * sizeof(int));
     }
+}
+
+vector<int> VFSManager::getIndirectClustersIdxs(int sourceInodeIdx, int clusterCount) {
+    vector<int> clusterIdxs;
+    int intsPerCluster = sb.clusterSize / sizeof(int);
+
+    if(clusterCount > Constants::DIRECTS_COUNT) {
+        // for indirect 1
+        clusterIdxs.push_back(inodes[sourceInodeIdx].indirect1);
+    }
+
+    if(clusterCount > Constants::DIRECTS_COUNT + intsPerCluster) {
+        // for indirect 2
+        clusterIdxs.push_back(inodes[sourceInodeIdx].indirect2);
+
+        int idxOfLastClusterInIndirect2 = clusterCount - Constants::DIRECTS_COUNT - intsPerCluster;
+        int countOfIndirects1InIndirect2 = ceil(idxOfLastClusterInIndirect2 / (double) intsPerCluster)  ;
+
+        // get the references from indirect2
+        int *indirects = (int *) malloc(countOfIndirects1InIndirect2 * sizeof(int));
+        fseek(fp, sb.dataClustersAddress + inodes[sourceInodeIdx].indirect2 * sb.clusterSize, SEEK_SET);
+        fread(indirects, sizeof(int), countOfIndirects1InIndirect2, fp);
+
+        // add array to vector
+        for(int i = 0; i < countOfIndirects1InIndirect2; i++) {
+            clusterIdxs.push_back(indirects[i]);
+        }
+
+        free(indirects);
+    }
+
+    return clusterIdxs;
 }
 
 void VFSManager::readDataChunk(int dataClusterIdx, char *buffer, int bytesCount) {

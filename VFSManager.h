@@ -102,6 +102,8 @@ private:
     void readDataChunk(int dataClusterIdx, char *buffer, int bytesCount);
     // get index of data cluster based on index of data chunk
     int getDataClusterIdxByChunkIdx(int sourceInodeIdx, int chunkIdx);
+    // get the indirect indexes of given item
+    vector<int> getIndirectClustersIdxs(int sourceInodeIdx, int clusterCount);
 
 public:
     // constructor
