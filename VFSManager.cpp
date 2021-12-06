@@ -54,6 +54,12 @@ VFSManager::~VFSManager() {
 void VFSManager::handleCommand(string commandLine) {
     // get the parts of command
     vector<string> parts = StringUtils::split(commandLine, Constants::COMMAND_DELIM);
+
+    if(parts.empty()) {
+        cout << Constants::UNKNOWN_COMMAND_MSG << endl;
+        return;
+    }
+
     string command = parts[0];
 
     // execute command
